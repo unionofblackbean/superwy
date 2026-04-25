@@ -2,3 +2,4 @@
 "inventory.db" 
 "*.log" 
 node_modules
+*.litematic
