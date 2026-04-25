@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>脏小豆 - 仓库管理后台</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <style>
+        body { margin: 0; background-color: #f5f7fa; font-family: "PingFang SC",sans-serif; }
+        .app-container { padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .item-icon { width: 28px; height: 28px; vertical-align: middle; margin-right: 12px; image-rendering: pixelated; }
+        .status-card { margin-bottom: 20px; border-left: 5px solid #409EFF; }
+        .progress-section { margin-top: 20px; padding: 15px; background: #fff; border: 1px solid #ebeef5; border-radius: 4px; }
+        .area-name { font-size: 20px; font-weight: bold; color: #409EFF; }
+        .namespace-id { color: #909399; font-family: monospace; font-size: 11px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="app-container">
+            <el-card class="status-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <h2 style="margin: 0;">📦 仓库实物盘点系统</h2>
+                        <el-tag :type="status.status === 'scanning' ? 'success' : 'info'" effect="dark">
+                            {{ status.status === 'scanning' ? '正在执行任务' : '系统待机' }}
+                        </el-tag>
+                    </div>
+                    <el-button type="primary" size="large" @click="startScan('all')" :loading="status.status === 'scanning'">
+                        一键全连扫 (左/右/大宗/不可堆叠)
+                    </el-button>
+                </div>
+
+                <div v-if="status.status === 'scanning' || status.progress > 0" class="progress-section">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px;">
+                        <div>
+                            <div style="color: #909399; font-size: 13px;">当前扫描区域:</div>
+                            <div class="area-name">{{ status.current_area_name || '初始化...' }}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div>进度: <strong style="color: #409EFF;">{{ status.progress }}%</strong></div>
+                            <el-tag size="small" type="warning" effect="plain">坐标: {{ status.current_pos || '---' }}</el-tag>
+                        </div>
+                    </div>
+                    <el-progress :percentage="status.progress" :stroke-width="20" striped striped-flow></el-progress>
+                </div>
+            </el-card>
+
+            <el-card shadow="hover">
+                <el-radio-group v-model="filterType" style="margin-bottom: 20px;">
+                    <el-radio-button label="all">全部 ({{ items.length }})</el-radio-button>
+                    <el-radio-button label="rich">充足</el-radio-button>
+                    <el-radio-button label="low">不足</el-radio-button>
+                    <el-radio-button label="empty">缺货</el-radio-button>
+                </el-radio-group>
+
+                <el-table :data="filteredItems" border stripe height="calc(100vh - 350px)">
+                    <el-table-column label="名称 (中文)" min-width="180" sortable sort-by="name_zh">
+                        <template #default="scope">
+                            <img class="item-icon" :src="getIcon(scope.row.id)" @error="(e) => handleIconError(e, scope.row.id)">
+                            <strong>{{ scope.row.name_zh }}</strong>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="命名空间 ID" min-width="200">
+                        <template #default="scope"><span class="namespace-id">{{ scope.row.id }}</span></template>
+                    </el-table-column>
+                    <el-table-column label="详情" min-width="180">
+                        <template #default="scope"><div v-html="formatCount(scope.row.count)"></div></template>
+                    </el-table-column>
+                    <el-table-column prop="count" label="精确总数" width="120" align="right" sortable></el-table-column>
+                </el-table>
+            </el-card>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const { createApp } = Vue;
+        const socket = io();
+
+        const app = createApp({
+            data() {
+                return {
+                    items: [],
+                    status: { progress: 0, status: 'idle', current_pos: '', current_area_name: '等待指令' },
+                    filterType: 'all'
+                }
+            },
+            computed: {
+                filteredItems() {
+                    if (this.filterType === 'rich') return this.items.filter(i => i.count >= 1728);
+                    if (this.filterType === 'low') return this.items.filter(i => i.count > 0 && i.count < 1728);
+                    if (this.filterType === 'empty') return this.items.filter(i => i.count === 0);
+                    return this.items;
+                }
+            },
+            methods: {
+                startScan(mode) {
+                    socket.emit('command_scan', mode);
+                    this.$message.success('连扫任务已启动');
+                },
+                getIcon(id) {
+                    return `/items/${id.replace('minecraft:', '')}.png`;
+                },
+                handleIconError(e, id) {
+                    const blockPath = `/blocks/${id.replace('minecraft:', '')}.png`;
+                    if (!e.target.src.includes(blockPath)) {
+                        e.target.src = blockPath;
+                    } else {
+                        e.target.src = '/items/barrier.png'; // 最终兜底
+                    }
+                },
+                formatCount(num) {
+                    if (num === 0) return '<span style="color: #C0C4CC;">(无)</span>';
+                    const boxes = Math.floor(num / 1728);
+                    const stacks = Math.floor((num % 1728) / 64);
+                    const single = num % 64;
+                    let res = [];
+                    if (boxes > 0) res.push(`<span style="color:#409EFF;font-weight:bold">${boxes}</span>盒`);
+                    if (stacks > 0) res.push(`<span style="color:#67C23A;font-weight:bold">${stacks}</span>组`);
+                    if (single > 0 || res.length === 0) res.push(`<span>${single}</span>个`);
+                    return res.join('+');
+                }
+            },
+            mounted() {
+                socket.on('sync', (data) => {
+                    this.items = data.items;
+                    if (data.status) {
+                        data.status.progress = parseFloat(data.status.progress) || 0;
+                        this.status = data.status;
+                    }
+                });
+            }
+        });
+
+        app.use(ElementPlus);
+        app.mount('#app');
+    </script>
+</body>
+</html>
