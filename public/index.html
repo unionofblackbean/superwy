@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>脏小豆 - 自动化仓库管理系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { margin: 0; background-color: #f5f7fa; font-family: "PingFang SC","Microsoft YaHei",sans-serif; }
+        .app-container { padding: 20px; max-width: 1400px; margin: 0 auto; }
+        
+        /* 像素图标优化 */
+        .item-icon { 
+            width: 32px; height: 32px; vertical-align: middle; 
+            margin-right: 12px; image-rendering: pixelated; 
+        }
+
+        /* 顶部状态卡片 */
+        .status-card { margin-bottom: 20px; border-radius: 8px; border-left: 5px solid #409EFF; }
+        .header-content { display: flex; justify-content: space-between; align-items: center; }
+        
+        .progress-section { 
+            margin-top: 20px; padding: 15px; background: #fff; 
+            border-radius: 4px; border: 1px solid #ebeef5; 
+        }
+        
+        .area-display {
+            font-size: 22px; font-weight: bold; color: #409EFF;
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        .namespace-id { color: #909399; font-family: monospace; font-size: 11px; }
+        .pos-badge { font-family: monospace; }
+        
+        /* 容器提示框样式 */
+        .container-tooltip {
+            position: fixed !important;
+            background: rgba(0, 0, 0, 0.95);
+            color: #fff;
+            padding: 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 2147483647 !important;
+            white-space: nowrap;
+            pointer-events: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            border: 1px solid #409EFF;
+        }
+        
+        .container-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .container-coord {
+            padding: 4px 0;
+            line-height: 1.6;
+        }
+        
+        .container-coord-item {
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 2px 0;
+            border-radius: 3px;
+        }
+
+        .warehouse-map {
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #ebeef5;
+            border-radius: 8px;
+        }
+
+        .map-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .map-canvas-wrapper {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, 50px);
+            gap: 0;
+            width: 100%;
+            min-height: 400px;
+            border: 1px solid #ebeef5;
+            border-radius: 6px;
+            background: #f5f7fa;
+            overflow: auto;
+            padding: 10px;
+        }
+
+        .map-container-item {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            border: 2px solid #ebeef5;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .map-container-item:hover {
+            transform: scale(1.05);
+            border-color: #409EFF;
+            box-shadow: 0 0 8px rgba(64, 158, 255, 0.25);
+            z-index: 1;
+            opacity: 1 !important;
+        }
+
+        .map-container-item.low::after,
+        .map-container-item.empty::after {
+            content: '';
+            position: absolute;
+            inset: 3px;
+            border-radius: 6px;
+            pointer-events: none;
+        }
+
+        .map-container-item.low::after {
+            box-shadow: inset 0 0 0 2px rgba(255, 195, 0, 0.95);
+        }
+
+        .map-container-item.empty::after {
+            box-shadow: inset 0 0 0 2px rgba(255, 80, 80, 0.95);
+        }
+
+        .item-icon-map {
+            width: 45px;
+            height: 45px;
+            image-rendering: pixelated;
+        }
+
+        .map-empty-tip {
+            padding: 40px;
+            text-align: center;
+            color: #909399;
+        }
+
+        .map-status {
+            color: #67c23a;
+            font-weight: 500;
+        }
+
+        .cell-tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 1000;
+            white-space: nowrap;
+            pointer-events: none;
+            border: 1px solid #409EFF;
+        }
+
+        /* 分页器样式 */
+        .pagination-container {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            background: #fff;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        
+        /* 表格容器高度优化 */
+        .table-wrapper {
+            height: calc(100vh - 550px);
+            overflow: auto;
+        }
+
+        .task-queue-card {
+            margin-bottom: 20px;
+        }
+
+        .task-queue-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .task-queue-metric {
+            background: linear-gradient(135deg, #f7fbff 0%, #eef5ff 100%);
+            border: 1px solid #dbe7ff;
+            border-radius: 8px;
+            padding: 14px 16px;
+        }
+
+        .task-queue-metric-label {
+            color: #606266;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .task-queue-metric-value {
+            color: #1f2d3d;
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .task-queue-empty {
+            color: #909399;
+            text-align: center;
+            padding: 20px 0 8px;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        (function () {
+            const ACCESS_PASSWORD = 'pzmf1234';
+            const AUTH_KEY = 'superwy_frontend_authed';
+
+            if (sessionStorage.getItem(AUTH_KEY) === '1') {
+                return;
+            }
+
+            const input = window.prompt('请输入访问密码');
+            if (input === ACCESS_PASSWORD) {
+                sessionStorage.setItem(AUTH_KEY, '1');
+                return;
+            }
+
+            document.body.innerHTML = '<div style="height:100vh;display:flex;align-items:center;justify-content:center;background:#111;color:#fff;font-family:Microsoft YaHei,sans-serif;font-size:20px;">访问被拒绝：密码错误</div>';
+            throw new Error('Access denied');
+        })();
+    </script>
+    <div id="app">
+        <div class="app-container">
+            <div style="display:flex; justify-content:flex-end; margin-bottom:14px; gap:10px;">
+                <el-button type="primary" size="small" @click="window.location.href='layout-v2.html'">前往地图</el-button>
+            </div>
+            <el-tabs v-model="activeTab" type="border-card">
+                <!-- 库存盘点标签 -->
+                <el-tab-pane label="📦 库存盘点" name="inventory">
+            <el-card class="status-card" shadow="always">
+                <div class="header-content">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <h2 style="margin: 0;">📦 超级库管</h2>
+                        <el-tag :type="getStatusTagType" effect="dark">
+                            {{ getStatusTagText }}
+                        </el-tag>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <el-button-group>
+                            <el-button type="primary" size="large" @click="startScan('all')" :loading="status.status === 'scanning'">
+                                一键全连扫 (左/右/大宗/不可堆叠)
+                            </el-button>
+                            <el-button type="danger" size="large" @click="forceRescan">
+                                强制重扫
+                            </el-button>
+                            <el-button v-if="status.status === 'paused'" type="info" size="large" @click="resumeScan">
+                                ▶ 续扫
+                            </el-button>
+                        </el-button-group>
+                        
+                        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 0;">
+                            <span style="font-size: 14px; font-weight: 500; color: #606266;">扫描限速:</span>
+                            <el-input-number v-model="scanSpeed" :min="1" :max="1000" :step="1" size="small" controls-position="right" style="width: 130px;"></el-input-number>
+                            <span style="font-size: 14px; color: #606266;">ms / 次</span>
+                            <el-button type="primary" size="small" @click="sendScanSpeed">应用速度</el-button>
+                            <el-tag type="info" size="small" effect="plain">当前速度: {{ scanSpeed }} ms</el-tag>
+                        </div>
+                        
+                        <div style="display: flex; gap: 15px; padding: 10px; background: #f5f7fa; border-radius: 4px; align-items: center; flex-wrap: wrap;">
+                            <span style="font-size: 14px; font-weight: 500; color: #606266;">区域选择:</span>
+                            <el-checkbox v-model="selectedAreas" label="left" @change="handleAreaChange" :disabled="status.status === 'scanning' || status.status === 'paused'">全物品左侧</el-checkbox>
+                            <el-checkbox v-model="selectedAreas" label="right" @change="handleAreaChange" :disabled="status.status === 'scanning' || status.status === 'paused'">全物品右侧</el-checkbox>
+                            <el-checkbox v-model="selectedAreas" label="bulk" @change="handleAreaChange" :disabled="status.status === 'scanning' || status.status === 'paused'">大宗仓库</el-checkbox>
+                            <el-checkbox v-model="selectedAreas" label="unstackable" @change="handleAreaChange" :disabled="status.status === 'scanning' || status.status === 'paused'">不可堆叠区</el-checkbox>
+                            <el-button type="success" size="small" @click="startPartialScan" :disabled="selectedAreas.length === 0 || status.status === 'scanning' || status.status === 'paused'">
+                                扫描选中区域
+                            </el-button>
+                            <el-button v-if="status.status === 'scanning'" type="warning" size="small" @click="stopScan">
+                                ⏹ 停止扫描
+                            </el-button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="status.status === 'scanning' || status.status === 'paused' || status.progress > 0" class="progress-section">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px;">
+                        <div>
+                            <div style="color: #909399; font-size: 13px; margin-bottom: 5px;">正在扫描区域:</div>
+                            <div class="area-display">
+                                <el-icon v-if="status.status === 'scanning'" class="is-loading"><Loading /></el-icon>
+                                {{ status.current_area_name || '初始化区域...' }}
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="margin-bottom: 5px;">
+                                <span style="font-size: 14px; color: #606266;">任务进度: </span>
+                                <strong style="font-size: 20px; color: #409EFF;">{{ status.progress }}%</strong>
+                            </div>
+                            <el-tag size="small" type="warning" effect="plain" class="pos-badge">
+                                坐标: {{ status.current_pos || '---' }}
+                            </el-tag>
+                        </div>
+                    </div>
+                    <el-progress 
+                        :percentage="status.progress" 
+                        :stroke-width="20" 
+                        :status="status.progress === 100 ? 'success' : ''"
+                        striped 
+                        striped-flow
+                    ></el-progress>
+                </div>
+            </el-card>
+
+            <el-card class="task-queue-card" shadow="hover">
+                <template #header>
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                        <div>
+                            <div style="font-size:16px; font-weight:bold;">任务队列</div>
+                            <div style="font-size:12px; color:#909399; margin-top:4px;">所有假人移动、寻路任务都会在这里串行执行</div>
+                        </div>
+                        <el-button type="danger" plain @click="stopTaskQueue" :disabled="taskQueue.stats.running === 0 && taskQueue.stats.pending === 0">
+                            一键终止任务队列
+                        </el-button>
+                    </div>
+                </template>
+
+                <div class="task-queue-summary">
+                    <div class="task-queue-metric">
+                        <div class="task-queue-metric-label">运行中</div>
+                        <div class="task-queue-metric-value">{{ taskQueue.stats.running }}</div>
+                    </div>
+                    <div class="task-queue-metric">
+                        <div class="task-queue-metric-label">排队中</div>
+                        <div class="task-queue-metric-value">{{ taskQueue.stats.pending }}</div>
+                    </div>
+                    <div class="task-queue-metric">
+                        <div class="task-queue-metric-label">最近完成</div>
+                        <div class="task-queue-metric-value">{{ taskQueue.stats.completed }}</div>
+                    </div>
+                    <div class="task-queue-metric">
+                        <div class="task-queue-metric-label">失败 / 终止</div>
+                        <div class="task-queue-metric-value">{{ taskQueue.stats.failed + taskQueue.stats.cancelled }}</div>
+                    </div>
+                </div>
+
+                <el-table v-if="taskQueue.tasks.length > 0" :data="taskQueue.tasks" border stripe max-height="360" style="width:100%">
+                    <el-table-column label="ID" width="70" align="center" prop="id"></el-table-column>
+                    <el-table-column label="任务" min-width="220">
+                        <template #default="scope">
+                            <div style="font-weight:600;">{{ scope.row.title }}</div>
+                            <div v-if="scope.row.target" style="font-size:12px; color:#909399; margin-top:4px;">{{ scope.row.target }}</div>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="来源" min-width="160">
+                        <template #default="scope">
+                            <span class="namespace-id">{{ scope.row.source || '-' }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="状态" width="120" align="center">
+                        <template #default="scope">
+                            <el-tag :type="getTaskStatusTag(scope.row.status)" effect="dark">{{ getTaskStatusText(scope.row.status) }}</el-tag>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="更新时间" width="180">
+                        <template #default="scope">
+                            {{ formatTaskTime(scope.row.finishedAt || scope.row.startedAt || scope.row.createdAt) }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="结果" min-width="220">
+                        <template #default="scope">
+                            <span v-if="scope.row.error" style="color:#f56c6c;">{{ scope.row.error }}</span>
+                            <span v-else style="color:#67c23a;">{{ scope.row.status === 'completed' ? '已完成' : scope.row.status === 'running' ? '执行中' : '等待执行' }}</span>
+                        </template>
+                    </el-table-column>
+                </el-table>
+
+                <div v-else class="task-queue-empty">当前没有排队中的移动任务</div>
+            </el-card>
+
+            <el-card shadow="hover">
+                <template #header>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <el-radio-group v-model="filterType" size="default">
+                            <el-radio-button label="all">全部 ({{ counts.all }})</el-radio-button>
+                            <el-radio-button label="rich">充足 ({{ counts.rich }})</el-radio-button>
+                            <el-radio-button label="low">不足 ({{ counts.low }})</el-radio-button>
+                            <el-radio-button label="empty">缺货 ({{ counts.empty }})</el-radio-button>
+                        </el-radio-group>
+                        
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <el-input v-model="searchQuery" placeholder="搜索物品名称或ID..." prefix-icon="Search" clearable style="width: 250px;"></el-input>
+                        </div>
+                    </div>
+                </template>
+
+                <el-table 
+                    :data="pagedItems" 
+                    border 
+                    stripe 
+                    height="calc(100vh - 500px)"
+                    style="width: 100%"
+                >
+                    <el-table-column label="名称 (中文)" min-width="180">
+                        <template #default="scope">
+                            <div style="display: flex; align-items: center; gap: 8px;"
+                                 @mouseenter="handleItemHover(scope.row, $event)"
+                                 @mouseleave="hideContainerTooltip">
+                                <img 
+                                    class="item-icon" 
+                                    :src="getIcon(scope.row.id)" 
+                                    @error="(e) => handleIconError(e, scope.row.id)"
+                                >
+                                <span style="font-weight: bold;">{{ scope.row.name_zh }}</span>
+                                <el-icon v-if="scope.row.id === hoveredItemId" style="color: #409EFF;">
+                                    <Warning />
+                                </el-icon>
+                            </div>
+                        </template>
+                    </el-table-column>
+
+                    <el-table-column label="命名空间 ID" min-width="200">
+                        <template #default="scope">
+                            <span class="namespace-id">{{ scope.row.id }}</span>
+                        </template>
+                    </el-table-column>
+
+                    <el-table-column label="状态" width="100" align="center">
+                        <template #default="scope">
+                            <el-tag :type="getStatusTag(scope.row.count)" size="small" effect="dark">
+                                {{ getStatusText(scope.row.count) }}
+                            </el-tag>
+                        </template>
+                    </el-table-column>
+
+                    <el-table-column label="资产详情" min-width="220">
+                        <template #default="scope">
+                            <div v-html="formatCount(scope.row.count)"></div>
+                        </template>
+                    </el-table-column>
+
+                    <el-table-column prop="count" label="精确总数" width="120" align="right" sortable></el-table-column>
+                </el-table>
+
+                <el-empty v-if="items.length === 0" description="暂无数据，请先执行扫描任务" style="margin-top: 50px;"></el-empty>
+
+                <div v-if="items.length > 0" class="pagination-container">
+                    <el-pagination
+                        v-model:current-page="currentPage"
+                        v-model:page-size="pageSize"
+                        :page-sizes="[50, 100, 200]"
+                        layout="total, sizes, prev, pager, next, jumper"
+                        :total="filteredItems.length"
+                        @size-change="handleSizeChange"
+                        @current-change="handleCurrentChange"
+                        background
+                    ></el-pagination>
+                </div>
+            </el-card>
+                </el-tab-pane>
+                <!-- 仓库地图标签 -->
+                <el-tab-pane label="📍 平铺画面" name="map">
+                    <el-card shadow="hover">
+                        <template #header>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-size: 16px; font-weight: bold;">仓库坐标地图（多层级视图）</div>
+                                <div style="font-size: 12px; color: #909399;">所有容器同时显示，越高的层级越透明，鼠标悬停查看坐标和库存</div>
+                            </div>
+                        </template>
+
+                        <div class="warehouse-map">
+                            <div class="map-controls">
+                                <el-button type="primary" size="small" @click="fetchContainerMap">刷新地图</el-button>
+                                <span style="color: #606266; margin-left: 10px; font-size: 12px;">
+                                    💡 黄色：即将缺货 红色：缺货
+                                </span>
+                            </div>
+
+                            <div v-if="mapLoading" class="map-empty-tip">加载中，请稍候...</div>
+                            <div v-else-if="mapContainers.length === 0" class="map-empty-tip">暂无容器布局数据，请先执行扫描任务</div>
+                            <div v-else class="map-canvas-wrapper">
+                                <div v-for="item in mapContainers"
+                                     :key="`${item.container_x},${item.container_y},${item.container_z}`"
+                                     class="map-container-item"
+                                     :class="{ low: item.count > 0 && item.count < 1728, empty: item.count === 0 }">
+                                    <el-tooltip
+                                        :content="tooltipContent(item)"
+                                        placement="top"
+                                    >
+                                        <img
+                                            class="item-icon-map"
+                                            :src="getIcon(item.item_id)"
+                                            @error="(e) => handleIconError(e, item.item_id)"
+                                            :alt="item.item_name_zh"
+                                        />
+                                    </el-tooltip>
+                                </div>
+                            </div>
+                        </div>
+                    </el-card>
+                </el-tab-pane>
+                <!-- Litematica 材料计算器标签 -->
+                <el-tab-pane label="🏗️ 材料计算器" name="litematica">
+                    <el-card shadow="hover" style="margin-top: 0;">
+                        <template #header>
+                            <div style="font-size: 16px; font-weight: bold;">Litematica 建筑材料计算</div>
+                        </template>
+
+                        <div style="padding: 20px; text-align: center;">
+                            <el-upload
+                                drag
+                                action="/api/litematica"
+                                multiple="false"
+                                accept=".litematic"
+                                @success="handleLitematicaSuccess"
+                                @error="handleLitematicaError"
+                                style="margin-bottom: 20px;"
+                            >
+                                <template #default>
+                                    <div style="padding: 40px;">
+                                        <div style="font-size: 48px; margin-bottom: 10px;">📋</div>
+                                        <div style="font-size: 16px; font-weight: bold;">拖拽 Litematica 文件到此处</div>
+                                        <div style="font-size: 12px; color: #909399; margin-top: 5px;">或者点击选择文件</div>
+                                    </div>
+                                </template>
+
+                                <template #tip>
+                                    <div style="color: #909399;">仅支持 .litematic 格式的建筑文件</div>
+                                </template>
+                            </el-upload>
+
+                            <el-progress 
+                                v-if="litematicaLoading" 
+                                :percentage="0" 
+                                :indeterminate="true"
+                                :duration="2"
+                            ></el-progress>
+                        </div>
+
+                        <div v-if="litematicaResult" style="margin-top: 20px;">
+                            <el-result 
+                                v-if="litematicaResult.error"
+                                icon="error"
+                                :title="'解析失败'"
+                                :sub-title="litematicaResult.error"
+                            >
+                                <template #extra>
+                                    <el-button @click="clearLitematicaResult">重新上传</el-button>
+                                </template>
+                            </el-result>
+
+                            <div v-else style="padding: 20px;">
+                                <!-- 投影信息卡片 -->
+                                <el-card shadow="hover" style="margin-bottom: 20px;">
+                                    <template #header>
+                                        <div style="font-weight: bold;">📋 投影信息</div>
+                                    </template>
+                                    <el-row :gutter="20">
+                                        <el-col :xs="24" :sm="12" :md="6">
+                                            <div style="border-right: 1px solid #f0f0f0; padding-right: 10px;">
+                                                <div style="color: #909399; font-size: 12px;">投影名称</div>
+                                                <div style="font-size: 16px; font-weight: bold; margin-top: 5px;">{{ litematicaResult.metadata.name }}</div>
+                                            </div>
+                                        </el-col>
+                                        <el-col :xs="24" :sm="12" :md="6">
+                                            <div style="border-right: 1px solid #f0f0f0; padding-right: 10px;">
+                                                <div style="color: #909399; font-size: 12px;">总方块数</div>
+                                                <div style="font-size: 16px; font-weight: bold; margin-top: 5px; color: #409EFF;">{{ litematicaResult.metadata.total_blocks }}</div>
+                                            </div>
+                                        </el-col>
+                                        <el-col :xs="24" :sm="12" :md="6">
+                                            <div style="border-right: 1px solid #f0f0f0; padding-right: 10px;">
+                                                <div style="color: #909399; font-size: 12px;">创建者</div>
+                                                <div style="font-size: 14px; margin-top: 5px;">{{ litematicaResult.metadata.author || '未记录' }}</div>
+                                            </div>
+                                        </el-col>
+                                        <el-col :xs="24" :sm="12" :md="6">
+                                            <div>
+                                                <div style="color: #909399; font-size: 12px;">修改时间</div>
+                                                <div style="font-size: 14px; margin-top: 5px;">{{ new Date(litematicaResult.metadata.time_modified).toLocaleString('zh-CN') }}</div>
+                                            </div>
+                                        </el-col>
+                                    </el-row>
+                                </el-card>
+
+                                <!-- 统计信息 -->
+                                <el-row :gutter="20" style="margin-bottom: 20px;">
+                                    <el-col :xs="24" :sm="12" :md="6">
+                                        <el-statistic title="物品总类" :value="litematicaResult.summary.totalTypes" />
+                                    </el-col>
+                                    <el-col :xs="24" :sm="12" :md="6">
+                                        <el-statistic title="库存充足" :value="litematicaResult.summary.sufficient" />
+                                    </el-col>
+                                    <el-col :xs="24" :sm="12" :md="6">
+                                        <el-statistic title="库存不足" :value="litematicaResult.summary.insufficient" />
+                                    </el-col>
+                                    <el-col :xs="24" :sm="12" :md="6">
+                                        <el-statistic title="缺少物品" :value="litematicaResult.summary.missing" />
+                                    </el-col>
+                                </el-row>
+
+                                <el-tabs style="margin-top: 20px;">
+                                    <!-- 缺少的物品 -->
+                                    <el-tab-pane>
+                                        <template #label>
+                                            <span style="color: #f56c6c; font-weight: bold;">
+                                                ❌ 缺少物品 ({{ litematicaResult.comparison.missing.length }})
+                                            </span>
+                                        </template>
+                                        <el-table :data="litematicaResult.comparison.missing" border stripe>
+                                            <el-table-column label="物品" min-width="200">
+                                                <template #default="scope">
+                                                    <img class="item-icon" :src="getIcon(scope.row.material)" @error="(e) => handleIconError(e, scope.row.material)">
+                                                    <strong>{{ scope.row.name_zh || scope.row.material }}</strong>
+                                                </template>
+                                            </el-table-column>
+                                            <el-table-column label="需要数量" width="150" align="center">
+                                                <template #default="scope">
+                                                    <span style="color: #f56c6c; font-weight: bold;">{{ scope.row.required }}</span>
+                                                </template>
+                                            </el-table-column>
+                                            <el-table-column label="命名空间 ID" width="200">
+                                                <template #default="scope">
+                                                    <span class="namespace-id">{{ scope.row.material }}</span>
+                                                </template>
+                                            </el-table-column>
+                                        </el-table>
+                                    </el-tab-pane>
+
+                                    <!-- 库存不足的物品 -->
+                                    <el-tab-pane>
+                                        <template #label>
+                                            <span style="color: #e6a23c; font-weight: bold;">
+                                                ⚠️ 库存不足 ({{ litematicaResult.comparison.insufficient.length }})
+                                            </span>
+                                        </template>
+                                        <el-table :data="litematicaResult.comparison.insufficient" border stripe>
+                                            <el-table-column label="物品" min-width="200">
+                                                <template #default="scope">
+                                                    <img class="item-icon" :src="getIcon(scope.row.material)" @error="(e) => handleIconError(e, scope.row.material)">
+                                                    <strong>{{ scope.row.name_zh || scope.row.material }}</strong>
+                                                </template>
+                                            </el-table-column>
+                                            <el-table-column label="需要数量" width="150" align="center">
+                                                <template #default="scope">
+                                                    {{ scope.row.required }}
+                                                </template>
+                                            </el-table-column>
+                                            <el-table-column label="现有库存" width="150" align="center">
+                                                <template #default="scope">
+                                                    <span style="color: #e6a23c;">{{ scope.row.available }}</span>
+                                                </template>
+                                            </el-table-column>
+                                            <el-table-column label="缺少数量" width="150" align="center">
+                                                <template #default="scope">
+                                                    <span style="color: #f56c6c; font-weight: bold;">{{ scope.row.lacking }}</span>
+                                                </template>
+                                            </el-table-column>
+                                        </el-table>
+                                    </el-tab-pane>
+
+                                    <!-- 库存充足的物品 -->
+                                    <el-tab-pane>
+                                        <template #label>
+                                            <span style="color: #67c23a; font-weight: bold;">
+                                                ✅ 库存充足 ({{ litematicaResult.comparison.sufficient.length }})
+                                            </span>
+                                        </template>
+                                        <el-table :data="litematicaResult.comparison.sufficient" border stripe>
+                                            <el-table-column label="物品" min-width="200">
+                                                <template #default="scope">
+                                                    <img class="item-icon" :src="getIcon(scope.row.material)" @error="(e) => handleIconError(e, scope.row.material)">
+                                                    <strong>{{ scope.row.name_zh || scope.row.material }}</strong>
+                                                </template>
+                                            </el-table-column>
+                                            <el-table-column label="需要数量" width="150" align="center">
+                                                <template #default="scope">
+                                                    {{ scope.row.required }}
+                                                </template>
+                                            </el-table-column>
+                                            <el-table-column label="现有库存" width="150" align="center">
+                                                <template #default="scope">
+                                                    <span style="color: #67c23a;">{{ scope.row.available }}</span>
+                                                </template>
+                                            </el-table-column>
+                                        </el-table>
+                                    </el-tab-pane>
+                                </el-tabs>
+
+                                <el-button @click="clearLitematicaResult" style="margin-top: 20px;">上传新文件</el-button>
+                            </div>
+                        </div>
+                    </el-card>
+                </el-tab-pane>
+            </el-tabs>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        const socket = io();
+
+        const app = createApp({
+            data() {
+                return {
+                    items: [],
+                    status: { 
+                        progress: 0, 
+                        status: 'idle', 
+                        current_pos: '', 
+                        current_area_name: '等待指令' 
+                    },
+                    filterType: 'all',
+                    searchQuery: '',
+                    // 分页数据
+                    currentPage: 1,
+                    pageSize: 50,
+                    // 区域选择
+                    selectedAreas: [],
+                    // Litematica 相关
+                    activeTab: 'inventory',
+                    litematicaResult: null,
+                    litematicaLoading: false,
+                    scanSpeed: 20,
+                    // 容器信息
+                    hoveredItemId: null,
+                    containerTooltip: {
+                        containers: [],
+                        x: 0,
+                        y: 0
+                    },
+                    tooltipEl: null,
+                    // 地图数据
+                    mapContainers: [],
+                    minX: 0,
+                    maxX: 0,
+                    minZ: 0,
+                    maxZ: 0,
+                    minY: 0,
+                    maxY: 0,
+                    canvasW: 400,
+                    canvasH: 400,
+                    mapLoading: false,
+                    taskQueue: {
+                        runningTask: null,
+                        pending: [],
+                        history: [],
+                        tasks: [],
+                        stats: {
+                            running: 0,
+                            pending: 0,
+                            completed: 0,
+                            failed: 0,
+                            cancelled: 0
+                        }
+                    }
+                }
+            },
+            computed: {
+                counts() {
+                    return {
+                        all: this.items.length,
+                        rich: this.items.filter(i => i.count >= 1728).length,
+                        low: this.items.filter(i => i.count > 0 && i.count < 1728).length,
+                        empty: this.items.filter(i => i.count === 0).length
+                    }
+                },
+                xRange() {
+                    const result = [];
+                    for (let x = this.minX; x <= this.maxX; x++) {
+                        result.push(x);
+                    }
+                    return result;
+                },
+                zRange() {
+                    const result = [];
+                    for (let z = this.minZ; z <= this.maxZ; z++) {
+                        result.push(z);
+                    }
+                    return result;
+                },
+                // 状态标签类型
+                getStatusTagType() {
+                    if (this.status.status === 'scanning') return 'success';
+                    if (this.status.status === 'paused') return 'warning';
+                    return 'info';
+                },
+                // 状态标签文本
+                getStatusTagText() {
+                    if (this.status.status === 'scanning') return 'Bot 正在工作中';
+                    if (this.status.status === 'paused') return '扫描已暂停，待续扫';
+                    return '系统就绪';
+                },
+                // 过滤与排序逻辑
+                filteredItems() {
+                    let list = [...this.items];
+                    
+                    // 1. 类别过滤
+                    if (this.filterType === 'rich') list = list.filter(i => i.count >= 1728);
+                    else if (this.filterType === 'low') list = list.filter(i => i.count > 0 && i.count < 1728);
+                    else if (this.filterType === 'empty') list = list.filter(i => i.count === 0);
+                    
+                    // 2. 搜索过滤
+                    if (this.searchQuery) {
+                        const q = this.searchQuery.toLowerCase();
+                        list = list.filter(i => 
+                            i.name_zh.toLowerCase().includes(q) || 
+                            i.id.toLowerCase().includes(q)
+                        );
+                    }
+                    
+                    // 3. 默认按库存降序
+                    return list.sort((a, b) => b.count - a.count);
+                },
+                // 物理分页切片
+                pagedItems() {
+                    const start = (this.currentPage - 1) * this.pageSize;
+                    const end = start + this.pageSize;
+                    return this.filteredItems.slice(start, end);
+                }
+            },
+            methods: {
+                startScan(mode) {
+                    socket.emit('command_scan', mode);
+                    this.$message.success('全连扫任务已启动');
+                },
+                forceRescan() {
+                    this.$confirm('强制重扫将清空所有库存数据，是否继续？', '警告', {
+                        confirmButtonText: '确认',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        socket.emit('command_force_rescan');
+                        this.$message.success('强制重扫任务已启动，库存数据已清空');
+                    }).catch(() => {
+                        this.$message.info('已取消');
+                    });
+                },
+                handleAreaChange() {
+                    // 区域选择变化时的处理（可选）
+                },
+                startPartialScan() {
+                    if (this.selectedAreas.length === 0) {
+                        this.$message.warning('请至少选择一个区域');
+                        return;
+                    }
+                    socket.emit('command_scan', this.selectedAreas);
+                    this.$message.success(`已启动 ${this.selectedAreas.length} 个区域的扫描任务`);
+                },
+                stopScan() {
+                    this.$confirm('确认停止扫描？', '提示', {
+                        confirmButtonText: '确认',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        socket.emit('command_stop_scan');
+                        this.$message.success('扫描已停止');
+                    }).catch(() => {
+                        this.$message.info('已取消');
+                    });
+                },
+                stopTaskQueue() {
+                    this.$confirm('确认终止当前任务队列？运行中的移动任务会被中断。', '提示', {
+                        confirmButtonText: '确认',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        socket.emit('command_stop_task_queue');
+                        this.$message.success('已发送任务队列终止指令');
+                    }).catch(() => {
+                        this.$message.info('已取消');
+                    });
+                },
+                async fetchContainerMap() {
+                    this.mapLoading = true;
+                    try {
+                        const response = await fetch('/api/container-map');
+                        const data = await response.json();
+                        if (data.success) {
+                            this.mapContainers = data.containers;
+                            this.buildMapLayout();
+                        } else {
+                            this.$message.error(data.error || '地图数据加载失败');
+                        }
+                    } catch (err) {
+                        console.error('加载地图数据失败:', err);
+                        this.$message.error('地图数据加载失败');
+                    } finally {
+                        this.mapLoading = false;
+                    }
+                },
+                buildMapLayout() {
+                    if (!this.mapContainers || this.mapContainers.length === 0) {
+                        return;
+                    }
+                    let minX = Number.MAX_SAFE_INTEGER;
+                    let maxX = Number.MIN_SAFE_INTEGER;
+                    let minZ = Number.MAX_SAFE_INTEGER;
+                    let maxZ = Number.MIN_SAFE_INTEGER;
+                    let minY = Number.MAX_SAFE_INTEGER;
+                    let maxY = Number.MIN_SAFE_INTEGER;
+                    
+                    this.mapContainers.forEach(item => {
+                        minX = Math.min(minX, item.container_x);
+                        maxX = Math.max(maxX, item.container_x);
+                        minZ = Math.min(minZ, item.container_z);
+                        maxZ = Math.max(maxZ, item.container_z);
+                        minY = Math.min(minY, item.container_y);
+                        maxY = Math.max(maxY, item.container_y);
+                    });
+                    
+                    this.minX = isFinite(minX) ? minX : 0;
+                    this.maxX = isFinite(maxX) ? maxX : 10;
+                    this.minZ = isFinite(minZ) ? minZ : 0;
+                    this.maxZ = isFinite(maxZ) ? maxZ : 10;
+                    this.minY = isFinite(minY) ? minY : 0;
+                    this.maxY = isFinite(maxY) ? maxY : 10;
+                    
+                    // 计算动态画布大小（基于坐标范围）
+                    const xRange = this.maxX - this.minX;
+                    const zRange = this.maxZ - this.minZ;
+                    const wRange = Math.max(xRange, zRange);
+                    this.canvasW = wRange > 0 ? wRange * 60 + 60 : 400;  // 每个单位60px + 30px边距*2
+                    this.canvasH = wRange > 0 ? wRange * 60 + 60 : 400;
+                },
+
+                tooltipContent(item) {
+                    return `${item.item_name_zh}\n${item.item_id}\n坐标: ${item.container_x}, ${item.container_y}, ${item.container_z}\n容器总库存: ${item.count}`;
+                },
+                getContainerStyle(item) {
+                    // 计算容器的屏幕位置（绝对定位）
+                    // 将游戏坐标映射到屏幕空间
+                    const margin = 30;
+                    
+                    // 计算坐标范围
+                    const xRange = this.maxX - this.minX;
+                    const zRange = this.maxZ - this.minZ;
+                    const yRange = this.maxY - this.minY;
+                    
+                    // 使用预计算的画布大小
+                    const usableW = this.canvasW - 2 * margin;
+                    const usableH = this.canvasH - 2 * margin;
+                    
+                    // 计算归一化坐标（0-1范围）
+                    // 逆时针旋转90度：交换X和Z，并反转Z方向
+                    const normalizedX = xRange > 0 ? (item.container_x - this.minX) / xRange : 0.5;
+                    const normalizedZ = zRange > 0 ? (item.container_z - this.minZ) / zRange : 0.5;
+                    
+                    // 应用逆时针90度旋转：(x, z) -> (-z, x)，屏幕映射为 (z, 1-x)
+                    const rotatedLeft = margin + normalizedZ * usableW;
+                    const rotatedTop = margin + (1 - normalizedX) * usableH;
+                    
+                    // 根据Y高度计算透明度（越高越透明）
+                    let opacity = 1;
+                    if (yRange > 0) {
+                        const yNormalized = (item.container_y - this.minY) / yRange;
+                        opacity = 0.3 + yNormalized * 0.7;  // 范围 0.3-1.0
+                    }
+                    
+                    // 根据Y高度选择颜色
+                    const hue = yRange > 0 ? ((item.container_y - this.minY) / yRange) * 60 : 0;  // 从红到黄的色相
+                    
+                    return {
+                        left: `${rotatedLeft}px`,
+                        top: `${rotatedTop}px`,
+                        position: 'absolute',
+                        opacity: opacity,
+                        filter: `hue-rotate(${hue}deg)`,
+                        zIndex: Math.floor(item.container_y)  // 按Y高度排序z-index
+                    };
+                },
+                resumeScan() {
+                    this.$confirm('确认从上次停止的地方续扫？', '提示', {
+                        confirmButtonText: '确认',
+                        cancelButtonText: '取消',
+                        type: 'info'
+                    }).then(() => {
+                        socket.emit('command_resume_scan');
+                        this.$message.success('续扫已启动');
+                    }).catch(() => {
+                        this.$message.info('已取消');
+                    });
+                },
+                getIcon(id) {
+    const shortId = id.replace('minecraft:', '');
+    // 第一步：尝试 items 目录
+    return `/items/${shortId}.png`;
+},
+
+handleIconError(e, id) {
+    const shortId = id.replace('minecraft:', '');
+    const currentSrc = e.target.src;
+
+    // 定义尝试顺序：blocks -> blocks_front -> blocks_top -> blocks_side
+    const trySuffixes = [
+        `/blocks/${shortId}.png`,
+        `/blocks/${shortId}_front.png`,
+        `/blocks/${shortId}_top.png`,
+        `/blocks/${shortId}_side.png`
+    ];
+
+    // 找到当前正在尝试的是哪一个路径
+    let nextIndex = trySuffixes.findIndex(path => currentSrc.endsWith(path)) + 1;
+
+    if (nextIndex > 0 && nextIndex < trySuffixes.length) {
+        // 如果还在尝试列表中，继续尝试下一个
+        e.target.src = trySuffixes[nextIndex];
+    } else if (nextIndex === 0) {
+        // 如果当前是 items 失败，开启 blocks 的尝试
+        e.target.src = trySuffixes[0];
+    } else {
+        // 全部失败，显示屏障或草方块兜底
+        e.target.src = '/items/barrier.png';
+    }
+},
+                getStatusTag(count) {
+                    if (count >= 1728) return 'success';
+                    if (count > 0) return 'warning';
+                    return 'danger';
+                },
+                getStatusText(count) {
+                    if (count >= 1728) return '充足';
+                    if (count > 0) return '即将缺货';
+                    return '缺货';
+                },
+                getTaskStatusTag(status) {
+                    if (status === 'running') return 'success';
+                    if (status === 'completed') return 'info';
+                    if (status === 'failed') return 'danger';
+                    if (status === 'cancelled') return 'warning';
+                    return '';
+                },
+                getTaskStatusText(status) {
+                    if (status === 'running') return '运行中';
+                    if (status === 'completed') return '已完成';
+                    if (status === 'failed') return '失败';
+                    if (status === 'cancelled') return '已终止';
+                    return '排队中';
+                },
+                formatTaskTime(timestamp) {
+                    if (!timestamp) return '-';
+                    return new Date(timestamp).toLocaleTimeString('zh-CN', {
+                        hour12: false,
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                },
+                formatCount(num) {
+                    if (num === 0) return '<span style="color: #C0C4CC;">(无库存)</span>';
+                    const boxes = Math.floor(num / 1728);
+                    const stacks = Math.floor((num % 1728) / 64);
+                    const single = num % 64;
+                    let res = [];
+                    if (boxes > 0) res.push(`<span style="color: #409EFF; font-weight:bold;">${boxes}</span> 盒`);
+                    if (stacks > 0) res.push(`<span style="color: #67C23A; font-weight:bold;">${stacks}</span> 组`);
+                    if (single > 0 || res.length === 0) res.push(`<span>${single}</span> 个`);
+                    return res.join(' + ');
+                },
+                handleSizeChange(val) {
+                    this.pageSize = val;
+                    this.currentPage = 1;
+                },
+                handleCurrentChange(val) {
+                    this.currentPage = val;
+                },
+                handleLitematicaSuccess(response, file, fileList) {
+                    if (response.success) {
+                        // 将结果中的 material 字段名改为 'material'，并添加库存信息
+                        const formatComparison = (items) => {
+                            return items.map(item => ({
+                                ...item,
+                                material: item.material || Object.keys(item)[0]
+                            }));
+                        };
+
+                        this.litematicaResult = {
+                            metadata: response.metadata || {
+                                name: '未命名项目',
+                                author: '',
+                                total_blocks: 0,
+                                time_modified: 0
+                            },
+                            materials: response.materials,
+                            comparison: {
+                                sufficient: formatComparison(response.comparison.sufficient),
+                                insufficient: formatComparison(response.comparison.insufficient),
+                                missing: formatComparison(response.comparison.missing)
+                            },
+                            summary: response.summary
+                        };
+                        this.$message.success('文件解析成功！');
+                    } else {
+                        this.litematicaResult = { error: response.error || '上传失败' };
+                        this.$message.error('解析失败：' + (response.error || '未知错误'));
+                    }
+                    this.litematicaLoading = false;
+                },
+                handleLitematicaError(err) {
+                    this.$message.error('文件上传失败：' + (err.message || '未知错误'));
+                    this.litematicaLoading = false;
+                },
+                clearLitematicaResult() {
+                    this.litematicaResult = null;
+                },
+                sendScanSpeed() {
+                    const speed = Number(this.scanSpeed);
+                    if (Number.isNaN(speed) || speed < 1 || speed > 1000) {
+                        this.$message.warning('扫描速度必须在 1 到 1000 毫秒之间');
+                        return;
+                    }
+                    socket.emit('command_set_scan_speed', speed);
+                },
+                async handleItemHover(item, event) {
+                    this.hoveredItemId = item.id;
+                    try {
+                        const shortId = item.id.replace('minecraft:', '');
+                        const response = await fetch(`/api/container-locations/${shortId}`);
+                        const data = await response.json();
+                        if (data.success && this.tooltipEl) {
+                            this.containerTooltip.containers = data.containers;
+                            this.tooltipEl.innerHTML = `
+                                <div style="margin-bottom: 8px; font-weight: bold; color: #00ff00;">📍 物品位置</div>
+                                <div class="container-list">
+                                    ${data.containers.map(c => `
+                                        <div class="container-coord-item">
+                                            <span>${c.container_x}, ${c.container_y}, ${c.container_z}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            `;
+                            this.tooltipEl.style.display = 'block';
+                            this.tooltipEl.style.left = `${event.clientX + 10}px`;
+                            this.tooltipEl.style.top = `${event.clientY - 50}px`;
+                        }
+                    } catch (err) {
+                        console.error('获取容器位置失败:', err);
+                    }
+                },
+                hideContainerTooltip() {
+                    this.hoveredItemId = null;
+                    this.containerTooltip.containers = [];
+                    if (this.tooltipEl) {
+                        this.tooltipEl.style.display = 'none';
+                    }
+                }
+            },
+            watch: {
+                // 切换分类或搜索时，自动跳回第一页
+                filterType() { this.currentPage = 1; },
+                searchQuery() { this.currentPage = 1; }
+            },
+            mounted() {
+                this.tooltipEl = document.createElement('div');
+                this.tooltipEl.className = 'container-tooltip';
+                this.tooltipEl.style.display = 'none';
+                document.body.appendChild(this.tooltipEl);
+
+                socket.on('sync', (data) => {
+                    this.items = data.items;
+                    if (data.status) {
+                        data.status.progress = parseFloat(data.status.progress) || 0;
+                        this.status = data.status;
+                        if (data.status.scan_speed) {
+                            this.scanSpeed = Number(data.status.scan_speed);
+                        }
+                    }
+                    if (data.taskQueue) {
+                        this.taskQueue = data.taskQueue;
+                    }
+                });
+
+                socket.on('task_queue_update', (data) => {
+                    this.taskQueue = data;
+                });
+
+                socket.on('scan_speed_response', (response) => {
+                    if (response.success) {
+                        this.$message.success(`扫描速度已设置为 ${response.scan_speed} ms`);
+                        this.scanSpeed = response.scan_speed;
+                    } else {
+                        this.$message.error(response.error || '设置扫描速度失败');
+                    }
+                });
+                this.fetchContainerMap();
+            }
+        });
+
+        app.use(ElementPlus);
+        // 注册图标
+        for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+            app.component(key, component);
+        }
+        app.mount('#app');
+    </script>
+</body>
+</html>
